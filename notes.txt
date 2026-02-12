@@ -1,0 +1,8 @@
+file=/mnt/c/Documents\ and\ Settings/botta/Downloads/PMET\ Sector.xlsx"
+xlsx2csv $file | column -t -s, | less -S
+
+
+
+
+pat
+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
