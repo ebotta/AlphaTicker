@@ -19,14 +19,18 @@ try:
             if not row:
                 print("Empty row, skipping")
                 continue
+            print(f"Raw row: {row}")
             first = row[0].strip() if len(row) >= 1 else ''
             second = row[1].strip().upper() if len(row) >= 2 else ''
+            fourth = row[3].strip() if len(row) >= 4 else ''
             print(f"First token: {first}")
             print(f"Second token: {second}")
+            print(f"Fourth token: {fourth}")
             if second == 'CN':
                 print("This is a Canadian ticker.")
-                CN_tickers.append(first)
+                CN_tickers.append(first + "," + fourth)
             print("-" * 20)
+
 except FileNotFoundError:
     print("Error: 'tickers.csv' not found.")
 except Exception as e:
@@ -35,6 +39,7 @@ except Exception as e:
 print(f"Canadian Tickers: {CN_tickers}")
 print("-" * 20)
 
+
 # If no CN tickers found, keep a default example ticker
 if not CN_tickers:
     CN_tickers = ['AEM']
@@ -42,9 +47,26 @@ if not CN_tickers:
 headers = {}
 
 for ticker in CN_tickers:
-    print(f"Fetching data for: {ticker}")
+    print(f"Fetching data for: {ticker.split(',')[0]} in {ticker.split(',')[1]}")
+    if ticker.split(',')[1] == "Toronto":
+        CN_SE = "TO"
+        print(f"Determined exchange code: {CN_SE} for ticker: {ticker.split(',')[0]}")
+        
+    elif ticker.split(',')[1] == "Venture":
+        CN_SE = "V"
+        print(f"Determined exchange code: {CN_SE} for ticker: {ticker.split(',')[0]}")
+        
+    elif ticker.split(',')[1] == "NEO-L":   
+        CN_SE = "NEO"
+        print(f"Determined exchange code: {CN_SE} for ticker: {ticker.split(',')[0]}")
+        
+    elif ticker.split(',')[1] == "Canadian":
+        print ("This is a Canadian ticker but no exchange specified, skipping.")
+        continue
 
-    url = f"https://eodhd.com/api/fundamentals/{ticker}.TO?filter=Highlights::MarketCapitalizationMln&api_token=6996093bcbc331.27702836&fmt=json"
+    url = f"https://eodhd.com/api/fundamentals/{ticker.split(',')[0]}.{CN_SE}?filter=Highlights::MarketCapitalizationMln&api_token=6996093bcbc331.27702836&fmt=json"
+    print(f"Constructed URL: {url}")
+
     try:
         resp = requests.get(url, headers=headers, timeout=15)
     except Exception as e:
@@ -70,7 +92,7 @@ for ticker in CN_tickers:
 
     if int(j) > 50:
         # print(f"Market cap {j} is greater than 50, fetching time series data...")
-        url = f"https://eodhd.com/api/eod/{ticker}.TO?api_token=6996093bcbc331.27702836&fmt=json&period=d&from=2026-01-20"
+        url = f"https://eodhd.com/api/eod/{ticker.split(',')[0]}.{CN_SE}?api_token=6996093bcbc331.27702836&fmt=json&period=d&from=2026-01-20"
         
 
 
@@ -203,7 +225,7 @@ for ticker in CN_tickers:
     
                     with open('Alphas.csv', 'a', newline='') as out_file:
                         out_ticker = csv.writer(out_file)
-                        out_ticker.writerow([f"{ticker} has outperformed GDX in the last 30 days by {ticker_gain - GDX_gain:.2%}."])
+                        out_ticker.writerow([f"{ticker.split(',')[0]} in the {CN_SE} exchange has outperformed GDX in the last 30 days by {ticker_gain - GDX_gain:.2%}"])
 
     else:
         print(f"Market cap {j} is not greater than 50")
