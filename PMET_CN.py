@@ -1,82 +1,210 @@
 import csv
+import time
 import requests
-#import jq
 
 CN_tickers = []
 
-# Open the file and process it line by line
+def _get_field(item, keys):
+    for k in keys:
+        if isinstance(item, dict) and k in item:
+            return item[k]
+    return None
+
+# Read tickers from CSV (safe indexing)
 try:
-    # Use 'newline='' parameter for consistent behavior across platforms
     with open('tickers.csv', mode='r', newline='', encoding='utf-8') as file:
         reader = csv.reader(file)
-        
-        # Iterate over each row in the CSV file
         for row in reader:
-            # 'row' is a list of strings (the tokens for that line)
             print(f"Original line tokens: {row}")
-            
-            # You can access individual tokens by index
-            # For example, to print the first token:
-            if row: # Check if the row is not empty
-                print(f"First token: {row[0]}")
-                print(f"Second token: {row[1]}")
-                if row[1] == "CN":
-                    print("This is a Canadian ticker.")
-                    CN_tickers.append(row[0])
-                
-
-            
-            print("-" * 20) # Separator for clarity
-
+            if not row:
+                print("Empty row, skipping")
+                continue
+            first = row[0].strip() if len(row) >= 1 else ''
+            second = row[1].strip().upper() if len(row) >= 2 else ''
+            print(f"First token: {first}")
+            print(f"Second token: {second}")
+            if second == 'CN':
+                print("This is a Canadian ticker.")
+                CN_tickers.append(first)
+            print("-" * 20)
 except FileNotFoundError:
-    print(f"Error: The file 'your_file.csv' was not found.")
+    print("Error: 'tickers.csv' not found.")
 except Exception as e:
-    print(f"An error occurred: {e}")
+    print(f"An error occurred while reading CSV: {e}")
 
 print(f"Canadian Tickers: {CN_tickers}")
-print("-" * 20) # Separator for clarity
+print("-" * 20)
 
-# this is where the APIs are flexed
-# this is only for QQQ for now, but we can loop through the CN_tickers list later to get data for all of them 
+# If no CN tickers found, keep a default example ticker
+if not CN_tickers:
+    CN_tickers = ['AEM']
 
-url = "https://api.finazon.io/latest/rivium/rivium_ca/time_series?interval=1mo&outputsize=12&timezone=UTC&apikey=b46637d673ff4f36b60159b2492a8acfxm&ticker=QQQ"
-
-payload = {}
 headers = {}
 
-response = requests.request("GET", url, headers=headers, data=payload)
+for ticker in CN_tickers:
+    print(f"Fetching data for: {ticker}")
 
-print(response.text)
-print("-" * 20) # Separator for clarity
+    url = f"https://eodhd.com/api/fundamentals/{ticker}.TO?filter=Highlights::MarketCapitalizationMln&api_token=6996093bcbc331.27702836&fmt=json"
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+    except Exception as e:
+        # print(f"Request failed for fundamentals of {ticker}: {e}")
+        continue
+    if not resp.ok:
+        # print(f"Non-OK response for fundamentals of {ticker}: {resp.status_code}")
+        with open('fails.csv', 'a', newline='') as out_file:
+            out_ticker = csv.writer(out_file)
+            out_ticker.writerow([ticker])
+        continue
+        
+    try:        j = resp.json()
+    except Exception as e:
+        # print(f"Invalid JSON for fundamentals of {ticker}: {e}")
+        continue
+    # print(f"MarketCapitalizationMln for {ticker}: {j}")
+    # print("-" * 20)
 
-#result = jq('.data[] | {date: .date, open: .open, high: .high, low: .low, close: .close}').transform(response.text)
+    if str(j).lower() == "na":
+        # print(f"Market cap for {ticker} is not available.")
+        continue
+
+    if int(j) > 50:
+        # print(f"Market cap {j} is greater than 50, fetching time series data...")
+        url = f"https://eodhd.com/api/eod/{ticker}.TO?api_token=6996093bcbc331.27702836&fmt=json&period=d&from=2026-01-20"
+        
 
 
-# Parse the JSON response into a Python dictionary/list
-data = response.json()
-print(data)
-print("-" * 20) # Separator for clarity
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+        except Exception as e:
+            print(f"Request failed for {ticker}: {e}")
+            continue
 
-# Extract specific data (example assumes a structure like: {"results": [{"name": "John", ...}]})
+        if not resp.ok:
+            print(f"Non-OK response for {ticker}: {resp.status_code}")
+            continue
 
-# Assuming your list is named 'data'
+        try:
+            j = resp.json()
+        except Exception as e:
+            print(f"Invalid JSON for {ticker}: {e}")
+            continue
 
-extracted_data = [{'d': item['d'], 'c': item['c'], 'v': item['v']} for item in data]
-print(extracted_data)
-print("-" * 20) # Separator for clarity
 
-# calculate Market Cap = Price * Volume
-dates = [item['d'] for item in extracted_data]
-print(dates)
-print("-" * 20) # Separator for clarity
+        # Try common locations for time series
+        if isinstance(j, dict):
+            items = j.get('data') or j.get('results') or j.get('series') or []
+        elif isinstance(j, list):
+            items = j
+        else:
+            items = []
 
-market_caps = [item['c'] * item['v'] for item in extracted_data]
-print(market_caps)
-print("-" * 20) # Separator for clarity
+        extracted = []
+        for item in items:
+            d = _get_field(item, ('d', 'date'))
+            c = _get_field(item, ('c', 'close', 'price'))
+            v = _get_field(item, ('v', 'volume'))
+            try:
+                c = float(c) if c is not None else None
+                v = float(v) if v is not None else None
+            except Exception:
+                c = None
+                v = None
+            if d is None or c is None or v is None:
+                continue
+            extracted.append({'d': d, 'c': c, 'v': v})
 
-# start playing with the data, maybe calculate some moving averages or something?
-# this is just an example of calculating the difference in market cap between each month, we can do more complex stuff later
-deltas = [market_caps[i] - market_caps[i-1] for i in range(1, len(market_caps))]
-print(deltas)
-print("-" * 20) # Separator for clarity
+            # Access the headers directly
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            limit = resp.headers.get("X-RateLimit-Limit")
+
+            # print(f"Requests remaining this minute: {remaining} / {limit}")
+            if int(remaining) < 50:
+                print("Approaching rate limit, sleeping for 60 seconds...")
+                time.sleep(.1)
+                print("slept for 0.1 seconds to respect rate limits")
+                
+        # print(f"Extracted {len(extracted)} data points for {ticker}")
+
+        if not extracted:
+            print("No usable time-series data found for this ticker.")
+            print("-" * 20)
+            continue
+
+        dates = [item['d'] for item in extracted]
+        closes = [item['c'] for item in extracted]
+        volumes = [item['v'] for item in extracted]
+
+        # print (f"Dates: {dates}")
+        # print (f"Closes: {closes}")
+        # print (f"Volumes: {volumes}")
+
+        avg_volume = sum(volumes) / len(volumes) if volumes else 0
+        # print(f"Average Volume: {avg_volume}")
+
+        # print("-" * 20)
+
+        if avg_volume > 100000:    
+            # pulling GDX for comparison
+            url = "https://eodhd.com/api/eod/GDX.US?api_token=6996093bcbc331.27702836&fmt=json&period=d&from=2026-02-19"
+
+            payload = {}
+            headers = {}
+
+            response = requests.request("GET", url, headers=headers, data=payload)
+
+            try:
+                resp = requests.get(url, headers=headers, timeout=15)
+            except Exception as e:
+                print(f"Request failed for {ticker}: {e}")
+                continue
+
+            if not resp.ok:
+                print(f"Non-OK response for {ticker}: {resp.status_code}")
+                continue
+
+            try:
+                j = resp.json()
+            except Exception as e:
+                print(f"Invalid JSON for {ticker}: {e}")
+                continue
+
+
+            # Try common locations for time series
+            if isinstance(j, dict):
+                items = j.get('data') or j.get('results') or j.get('series') or []
+            elif isinstance(j, list):
+                items = j
+            else:
+                items = []
+
+            GDX = []
+            for item in items:
+                d = _get_field(item, ('d', 'date'))
+                c = _get_field(item, ('c', 'close', 'price'))
+                v = _get_field(item, ('v', 'volume'))
+                try:
+                    c = float(c) if c is not None else None
+                    v = float(v) if v is not None else None
+                except Exception:
+                    c = None
+                    v = None
+                if d is None or c is None or v is None:
+                    continue
+                GDX.append({'d': d, 'c': c, 'v': v})
+            
+                print (f"GDX Closes: {[item['c'] for item in GDX]}")
+                GDX_gain = (GDX[0]['c'] - GDX[-1]['c']) / GDX[-1]['c'] if len(GDX) >= 2 else 0
+                ticker_gain = (closes[0] - closes[-1]) / closes[-1] if len(closes) >= 2 else 0
+                print(f"GDX Gain: {GDX_gain:.2%}")
+                print(f"{ticker} Gain: {ticker_gain:.2%}")
+                if ticker_gain > GDX_gain:
+                    print(f"{ticker} has outperformed GDX in the last 30 days.")    
+    
+                    with open('Alphas.csv', 'a', newline='') as out_file:
+                        out_ticker = csv.writer(out_file)
+                        out_ticker.writerow([f"{ticker} has outperformed GDX in the last 30 days by {ticker_gain - GDX_gain:.2%}."])
+
+    else:
+        print(f"Market cap {j} is not greater than 50")
 

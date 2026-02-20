@@ -1,4 +1,5 @@
 import csv
+
 with open('output_data.csv', newline='') as in_file:
     readlines = csv.reader(in_file, delimiter=',')
     for line in readlines:
