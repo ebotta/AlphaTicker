@@ -39,7 +39,7 @@ def remove_first_and_last_line(filename):
     # Use list slicing to get all lines except the first (lines[1:])
     # and the last (lines[:-1]), combining to lines[1:-1].
     # This creates a new list with the middle lines.
-    new_lines = lines[2:-2]
+    new_lines = lines[1:-2]
     
     with open(filename, 'w') as f:
         # Write the modified list of lines back to the file

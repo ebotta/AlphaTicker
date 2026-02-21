@@ -2,6 +2,7 @@
 # Run the AlphaTicker application
 
 rm Alphas.csv
+rm Alphas.xlsx
 rm fails.csv
 rm output_data.csv
 rm tickers.csv
